@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart Drip Irrigation System Simulation</title>
+    <style>
+        body {
+            margin: 0; padding: 0; display: flex; height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden; background-color: #e5e5e5;
+        }
+        #sidebar {
+            width: 300px; background: #f5f5f7; padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1); display: flex;
+            flex-direction: column; gap: 12px; z-index: 10; box-sizing: border-box;
+        }
+        #canvas-container { flex: 1; height: 100vh; position: relative; }
+        canvas { background: #ffffff; display: block; }
+        .btn {
+            background: #007aff; color: white; border: none; padding: 14px;
+            border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold;
+        }
+        .btn:active { background: #0051a8; }
+        label { font-size: 13px; color: #333; font-weight: 500; margin-top: 5px; }
+        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        
+        .status-container { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-top: 5px; }
+        .light { width: 15px; height: 15px; border-radius: 50%; background: #ccc; }
+        .light.green { background: #34c759; box-shadow: 0 0 8px #34c759; }
+        .light.red { background: #ff3b30; box-shadow: 0 0 8px #ff3b30; animation: blink 0.8s infinite alternate; }
+        
+        @keyframes blink {
+            from { opacity: 1; box-shadow: 0 0 10px #ff3b30; }
+            to { opacity: 0.4; box-shadow: 0 0 2px #ff3b30; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>IoT Control Panel</h2>
+        
+        <button class="btn" id="buildBtn" style="background: #007aff;">⚡ Auto-Generate Hardware Model</button>
+        
+        <hr style="width:100%; border:0; border-top:1px solid #ddd; margin:5px 0;">
+
+        <label>Water Reservoir Volume (L):</label>
+        <input type="number" id="waterVolume" value="12" min="0" max="20" oninput="checkWaterLevel()">
+        
+        <div class="status-container">
+            <div id="tankLight" class="light green"></div>
+            <span id="tankStatus">Reservoir: Water Level OK</span>
+        </div>
+
+        <label>Soil Sensor Moisture (%):</label>
+        <input type="number" id="soilMoisture" value="32" min="0" max="100">
+        
+        <label>Irrigation Threshold (%):</label>
+        <select id="threshold">
+            <option value="40">Auto-on below 40%</option>
+            <option value="50">Auto-on below 50%</option>
+        </select>
+
+        <div class="status-container">
+            <div id="pumpLight" class="light"></div>
+            <span id="pumpStatus">Submersible Pump: Standby</span>
+        </div>
+
+        <button class="btn" id="simBtn" style="background: #34c759; margin-top: 10px;">🟢 Start Smart Automation Test</button>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="farmCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('farmCanvas');
+        const ctx = canvas.getContext('2d');
+        let isBuilt = false;
+        let isWatering = false;
+        let isLowWater = false; 
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth - 300;
+            canvas.height = window.innerHeight;
+            drawEverything();
+        }
+
+        function checkWaterLevel() {
+            let water = parseFloat(document.getElementById('waterVolume').value);
+            let tankLight = document.getElementById('tankLight');
+            let tankStatus = document.getElementById('tankStatus');
+
+            // Low water warning threshold set to 3L
+            if (water <= 3) {
+                isLowWater = true;
+                tankLight.className = "light red"; 
+                tankStatus.innerText = "Reservoir: ⚠️ Low Water Level!";
+                tankStatus.style.color = "#ff3b30";
+                tankStatus.style.fontWeight = "bold";
+            } else {
+                isLowWater = false;
+                tankLight.className = "light green"; 
+                tankStatus.innerText = "Reservoir: Water Level OK";
+                tankStatus.style.color = "#333";
+                tankStatus.style.fontWeight = "normal";
+            }
+            if (isBuilt) drawEverything(); 
+        }
+
+        document.getElementById('buildBtn').addEventListener('click', () => {
+            isBuilt = true;
+            checkWaterLevel(); 
+            drawEverything();
+        });
+
+        function drawEverything() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Light background grid
+            ctx.strokeStyle = '#f4f4f6'; ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+            for (let y = 0; y < canvas.height; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+            
+            if (!isBuilt) {
+                ctx.fillStyle = '#8e8e93'; ctx.font = '20px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText("Click the blue button to auto-generate the smart irrigation model.", canvas.width/2, canvas.height/2);
+                return;
+            }
+
+            ctx.textAlign = 'left';
+            
+            // 1. Draw Water Reservoir (Clear Tank)
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 3;
+            ctx.strokeRect(50, 150, 160, 220); 
+            
+            let waterVol = parseFloat(document.getElementById('waterVolume').value);
+            let waterHeight = (Math.max(0, waterVol) / 20) * 200; 
+            
+            ctx.fillStyle = isLowWater ? 'rgba(255, 59, 48, 0.2)' : 'rgba(122, 222, 255, 0.6)';
+            ctx.fillRect(52, 368 - waterHeight, 156, waterHeight);
+            
+            ctx.fillStyle = '#333'; ctx.font = 'bold 14px sans-serif';
+            ctx.fillText("Water Reservoir (Clear Tank)", 50, 130);
+
+            // Hardware Status LED on the Tank
+            ctx.beginPath();
+            ctx.arc(130, 175, 8, 0, Math.PI * 2);
+            ctx.fillStyle = isLowWater ? '#ff3b30' : '#34c759'; 
+            ctx.fill();
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.fillStyle = '#333'; ctx.font = '10px sans-serif';
+            ctx.fillText(isLowWater ? "RESERVOIR EMPTY" : "RESERVOIR FULL", 145, 178);
+
+            // 2. Draw Submersible Pump
+            ctx.fillStyle = '#4a4a4a';
+            ctx.fillRect(110, 310, 50, 55); 
+            ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif';
+            ctx.fillText("PUMP", 120, 340);
+
+            // 3. Draw Smart Controller Unit
+            ctx.fillStyle = '#f2f2f7'; ctx.strokeStyle = '#007aff'; ctx.lineWidth = 2;
+            ctx.fillRect(350, 50, 220, 85);
+            ctx.strokeRect(350, 50, 220, 85);
+            ctx.fillStyle = '#007aff'; ctx.font = 'bold 13px sans-serif';
+            ctx.fillText("Smart Controller Unit", 360, 75);
+            
+            // Pump Status LED on the Controller
+            ctx.beginPath();
+            ctx.arc(370, 105, 6, 0, Math.PI * 2);
+            ctx.fillStyle = isWatering ? '#34c759' : '#8e8e93'; 
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#333'; ctx.font = '10px monospace';
+            ctx.fillText(isWatering ? "PUMP STATUS: ACTIVE" : "PUMP STATUS: STANDBY", 385, 108);
+
+            // 4. Draw Potting Soil & Roots
+            let potX = 420, potY = 320;
+            ctx.fillStyle = '#9c6644'; 
+            ctx.beginPath(); ctx.moveTo(potX, potY); ctx.lineTo(potX+160, potY); ctx.lineTo(potX+130, potY+120); ctx.lineTo(potX+30, potY+120); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = '#6c584c'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(potX+80, potY); ctx.quadraticCurveTo(potX+60, potY+50, potX+50, potY+90);ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(potX+80, potY); ctx.quadraticCurveTo(potX+100, potY+60, potX+110, potY+100);ctx.stroke();
+            ctx.fillStyle = '#34c759'; ctx.beginPath(); ctx.arc(potX+80, potY-40, 25, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#333'; ctx.font = 'bold 13px sans-serif'; ctx.fillText("Potted Plant (Soil & Roots)", potX, potY+150);
+
+            // 5. Draw Soil Moisture Sensor Probe
+            ctx.fillStyle = '#2c3e50'; ctx.fillRect(potX+30, potY-20, 15, 50); 
+            ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(potX+37, potY-20); ctx.quadraticCurveTo(potX+20, 100, 350, 100); ctx.stroke();
+            ctx.fillStyle = '#333'; ctx.font = '10px sans-serif'; ctx.fillText("Sensor Probe", potX-45, potY-25);
+
+            // 6. Draw Micro-Tube & Drip Emitter
+            ctx.strokeStyle = isWatering ? '#007aff' : '#555'; 
+            ctx.lineWidth = isWatering ? 5 : 3.5;
+            ctx.beginPath(); ctx.moveTo(135, 310); ctx.lineTo(135, 100); ctx.lineTo(320, 100); ctx.lineTo(320, 280); ctx.lineTo(potX+70, 280); ctx.stroke();
+
+            ctx.fillStyle = '#ff9500'; ctx.fillRect(potX+65, 275, 12, 15);
+            ctx.fillStyle = '#333'; ctx.font = '10px sans-serif'; ctx.fillText("Drip Emitter (1 GPH)", potX+85, 275);
+
+            // Water Drips Animation
+            if (isWatering) {
+                ctx.fillStyle = '#007aff';
+                ctx.beginPath(); ctx.arc(potX+71, 298, 4, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(potX+71, 310, 4, 0, Math.PI*2); ctx.fill();
+            }
+        }
+
+        // Smart Automation Logic Test
+        document.getElementById('simBtn').addEventListener('click', () => {
+            if (!isBuilt) { alert("Please generate the hardware model first!"); return; }
+            
+            let water = parseFloat(document.getElementById('waterVolume').value);
+            let soil = parseFloat(document.getElementById('soilMoisture').value);
+            let thresh = parseFloat(document.getElementById('threshold').value);
+
+            // Safety check for empty tank
+            if (isLowWater) {
+                alert("🚨 System Alert: Safety Intercept!\nWater reservoir level is too low (" + water + "L).\nSubmersible pump dry-run protection activated. System halted.");
+                return;
+            }
+
+            if (soil < thresh) {
+                isWatering = true;
+                document.getElementById('pumpLight').className = "light green";
+                document.getElementById('pumpStatus').innerText = "Submersible Pump: Active (Watering...)";
+                drawEverything(); 
+
+                setTimeout(() => {
+                    isWatering = false;
+                    document.getElementById('soilMoisture').value = Math.min(100, soil + 25);
+                    let newWater = Math.max(0, water - 2.5);
+                    document.getElementById('waterVolume').value = newWater;
+                    
+                    document.getElementById('pumpLight').className = "light";
+                    document.getElementById('pumpStatus').innerText = "Submersible Pump: Standby";
+                    
+                    checkWaterLevel(); 
+                    drawEverything();
+                    
+                    alert("🤖 Automation Report:\nSoil moisture was detected below threshold. Controller triggered the submersible pump.\nIrrigation completed. 2.5L water consumed.");
+                }, 1500);
+            } else {
+                alert("🤖 System Check:\nSoil moisture is sufficient (" + soil + "%), which is above the threshold. Pump remains in power-saving standby.");
+            }
+        });
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+    </script>
+</body>
+</html>
