@@ -1,252 +1,333 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Drip Irrigation System Simulation</title>
+    <title>智慧自動滴灌系統 - 完整精細版</title>
     <style>
-        body {
-            margin: 0; padding: 0; display: flex; height: 100vh;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            overflow: hidden; background-color: #e5e5e5;
+        body { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background-color: #0b0e14; 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
         }
-        #sidebar {
-            width: 300px; background: #f5f5f7; padding: 20px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1); display: flex;
-            flex-direction: column; gap: 12px; z-index: 10; box-sizing: border-box;
+        #ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            color: #ffffff;
+            background: rgba(15, 20, 30, 0.85);
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 5px solid #26a69a;
+            pointer-events: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            max-width: 350px;
         }
-        #canvas-container { flex: 1; height: 100vh; position: relative; }
-        canvas { background: #ffffff; display: block; }
-        .btn {
-            background: #007aff; color: white; border: none; padding: 14px;
-            border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold;
-        }
-        .btn:active { background: #0051a8; }
-        label { font-size: 13px; color: #333; font-weight: 500; margin-top: 5px; }
-        input, select { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
-        
-        .status-container { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-top: 5px; }
-        .light { width: 15px; height: 15px; border-radius: 50%; background: #ccc; }
-        .light.green { background: #34c759; box-shadow: 0 0 8px #34c759; }
-        .light.red { background: #ff3b30; box-shadow: 0 0 8px #ff3b30; animation: blink 0.8s infinite alternate; }
-        
-        @keyframes blink {
-            from { opacity: 1; box-shadow: 0 0 10px #ff3b30; }
-            to { opacity: 0.4; box-shadow: 0 0 2px #ff3b30; }
-        }
+        #ui-overlay h2 { margin: 0 0 10px 0; font-size: 20px; color: #26a69a; }
+        #ui-overlay p { margin: 5px 0; font-size: 13px; opacity: 0.9; line-height: 1.4; }
+        .label-hint { color: #4fc3f7; font-weight: bold; }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
 
-    <div id="sidebar">
-        <h2>IoT Control Panel</h2>
-        
-        <button class="btn" id="buildBtn" style="background: #007aff;">⚡ Auto-Generate Hardware Model</button>
-        
-        <hr style="width:100%; border:0; border-top:1px solid #ddd; margin:5px 0;">
-
-        <label>Water Reservoir Volume (L):</label>
-        <input type="number" id="waterVolume" value="12" min="0" max="20" oninput="checkWaterLevel()">
-        
-        <div class="status-container">
-            <div id="tankLight" class="light green"></div>
-            <span id="tankStatus">Reservoir: Water Level OK</span>
-        </div>
-
-        <label>Soil Sensor Moisture (%):</label>
-        <input type="number" id="soilMoisture" value="32" min="0" max="100">
-        
-        <label>Irrigation Threshold (%):</label>
-        <select id="threshold">
-            <option value="40">Auto-on below 40%</option>
-            <option value="50">Auto-on below 50%</option>
-        </select>
-
-        <div class="status-container">
-            <div id="pumpLight" class="light"></div>
-            <span id="pumpStatus">Submersible Pump: Standby</span>
-        </div>
-
-        <button class="btn" id="simBtn" style="background: #34c759; margin-top: 10px;">🟢 Start Smart Automation Test</button>
-    </div>
-
-    <div id="canvas-container">
-        <canvas id="farmCanvas"></canvas>
+    <div id="ui-overlay">
+        <h2>智慧自動滴灌系統 3D 模型</h2>
+        <p>● <span class="label-hint">盆栽系統：</span> 包含加厚花盆、底盤、深色培植土，以及多層次仿生植物綠葉。</p>
+        <p>● <span class="label-hint">環形滴水裝置：</span> 獨立圓環結構，帶有 8 個下垂噴頭，模擬重力加速度落水效果。</p>
+        <p>● <span class="label-hint">手稿文字標註：</span> 水管上方標有 "To Water Pump" 與接頭處的 "Water In" 字樣。</p>
+        <p>● <span class="label-hint">互動操作：</span> 滑鼠左鍵拖曳旋轉視角，滾輪可做無限細節放大檢視。</p>
     </div>
 
     <script>
-        const canvas = document.getElementById('farmCanvas');
-        const ctx = canvas.getContext('2d');
-        let isBuilt = false;
-        let isWatering = false;
-        let isLowWater = false; 
+        // --- 1. 初始化場景、相機與高端抗鋸齒渲染器 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0b0e14);
+        scene.fog = new THREE.FogExp2(0x0b0e14, 0.015);
 
-        function resizeCanvas() {
-            canvas.width = window.innerWidth - 300;
-            canvas.height = window.innerHeight;
-            drawEverything();
+        const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(22, 16, 22);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.appendChild(renderer.domElement);
+
+        // 滑鼠視角控制器
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.02;
+        controls.minDistance = 2;
+        controls.maxDistance = 50;
+
+        // --- 2. 燈光系統 ---
+        const ambientLight = new THREE.AmbientLight(0xdff0ff, 0.5);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        sunLight.position.set(15, 35, 15);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.bias = -0.0005;
+        scene.add(sunLight);
+
+        // 側邊補光
+        const fillLight = new THREE.DirectionalLight(0x80d8ff, 0.4);
+        fillLight.position.set(-15, 10, -15);
+        scene.add(fillLight);
+
+        // 地面網格
+        const grid = new THREE.GridHelper(60, 60, 0x26a69a, 0x1c2028);
+        grid.position.y = -0.01;
+        scene.add(grid);
+
+        const systemGroup = new THREE.Group();
+        scene.add(systemGroup);
+
+        // ==========================================
+        // A. 儲水箱與水泵系統
+        // ==========================================
+        const tankGroup = new THREE.Group();
+        tankGroup.position.set(-8, 4, 0);
+
+        // 玻璃外框
+        const glassMat = new THREE.MeshStandardMaterial({ color: 0xe0f7fa, transparent: true, opacity: 0.15, roughness: 0.05, metalness: 0.5, side: THREE.DoubleSide });
+        const tank = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 8), glassMat);
+        tankGroup.add(tank);
+
+        // 水體
+        const waterMat = new THREE.MeshStandardMaterial({ color: 0x0091ea, transparent: true, opacity: 0.4, roughness: 0.1 });
+        const water = new THREE.Mesh(new THREE.BoxGeometry(7.9, 5, 7.9), waterMat);
+        water.position.y = -1.45;
+        tankGroup.add(water);
+
+        // 抽水馬達
+        const pump = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2, 3), new THREE.MeshStandardMaterial({ color: 0x212121, roughness: 0.4 }));
+        pump.position.set(0, -3, 0);
+        pump.castShadow = true;
+        tankGroup.add(pump);
+        systemGroup.add(tankGroup);
+
+        // ==========================================
+        // B. 完整植栽系統 (Potted Plant)
+        // ==========================================
+        const plantSystem = new THREE.Group();
+        plantSystem.position.set(6, 0, 0);
+
+        // 花盆
+        const potMat = new THREE.MeshStandardMaterial({ color: 0xca6924, roughness: 0.8, side: THREE.DoubleSide });
+        const potBody = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 3.2, 6, 32, 1, true), potMat);
+        potBody.position.y = 3;
+        potBody.castShadow = true;
+        plantSystem.add(potBody);
+
+        // 底托盤
+        const saucer = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.3, 0.6, 32), potMat);
+        saucer.position.y = 0.3;
+        plantSystem.add(saucer);
+
+        // 土壤
+        const soil = new THREE.Mesh(new THREE.CylinderGeometry(4.0, 3.8, 5.6, 32), new THREE.MeshStandardMaterial({ color: 0x3d2b1f, roughness: 1.0 }));
+        soil.position.y = 2.9;
+        soil.receiveShadow = true;
+        plantSystem.add(soil);
+
+        // 植物植物主體
+        const plantGroup = new THREE.Group();
+        plantGroup.position.y = 5.8;
+
+        // 莖部
+        const stemGeo = new THREE.CylinderGeometry(0.12, 0.25, 5, 12);
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x1b5e20, roughness: 0.6, side: THREE.DoubleSide });
+        const mainStem = new THREE.Mesh(stemGeo, leafMat);
+        mainStem.position.y = 2.3;
+        mainStem.castShadow = true;
+        plantGroup.add(mainStem);
+
+        // 多層次綠葉
+        for(let i=0; i<10; i++) {
+            const leafGeo = new THREE.SphereGeometry(1.3, 16, 16);
+            leafGeo.scale(1, 0.1, 2.2);
+            const leaf = new THREE.Mesh(leafGeo, new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.5, side: THREE.DoubleSide }));
+            leaf.position.y = 0.8 + i * 0.45;
+            leaf.rotation.y = (i * Math.PI / 3.2);
+            leaf.rotation.x = 0.35;
+            leaf.castShadow = true;
+            plantGroup.add(leaf);
+        }
+        plantSystem.add(plantGroup);
+        systemGroup.add(plantSystem);
+
+        // ==========================================
+        // C. 獨立圓形滴水裝置 (Circular Drip Ring)
+        // ==========================================
+        const dripRingGroup = new THREE.Group();
+        dripRingGroup.position.set(6, 8.2, 0); 
+
+        const ringMat = new THREE.MeshStandardMaterial({ color: 0x0288d1, metalness: 0.6, roughness: 0.2 });
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(2.5, 0.14, 16, 100).rotateX(Math.PI/2), ringMat);
+        ring.castShadow = true;
+        dripRingGroup.add(ring);
+
+        // 固定金屬支架
+        for (let i = 0; i < 3; i++) {
+            const ang = (i / 3) * Math.PI * 2;
+            const bracket = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.5, 8), new THREE.MeshStandardMaterial({ color: 0x78909c, metalness: 0.7 }));
+            bracket.position.set(Math.cos(ang) * 2.5, -1.25, Math.sin(ang) * 2.5);
+            bracket.castShadow = true;
+            dripRingGroup.add(bracket);
         }
 
-        function checkWaterLevel() {
-            let water = parseFloat(document.getElementById('waterVolume').value);
-            let tankLight = document.getElementById('tankLight');
-            let tankStatus = document.getElementById('tankStatus');
+        // 噴頭與動態水滴初始化
+        const droplets = [];
+        const emitterCount = 8;
+        const dropGeo = new THREE.SphereGeometry(0.06, 12, 12).scale(1, 1.8, 1);
+        const dropMat = new THREE.MeshStandardMaterial({ color: 0x29b6f6, transparent: true, opacity: 0.85, roughness: 0.0 });
 
-            // Low water warning threshold set to 3L
-            if (water <= 3) {
-                isLowWater = true;
-                tankLight.className = "light red"; 
-                tankStatus.innerText = "Reservoir: ⚠️ Low Water Level!";
-                tankStatus.style.color = "#ff3b30";
-                tankStatus.style.fontWeight = "bold";
-            } else {
-                isLowWater = false;
-                tankLight.className = "light green"; 
-                tankStatus.innerText = "Reservoir: Water Level OK";
-                tankStatus.style.color = "#333";
-                tankStatus.style.fontWeight = "normal";
-            }
-            if (isBuilt) drawEverything(); 
+        const startY = -0.3; 
+        const endY = -2.3; // 對應撞擊土表的位置
+
+        for (let i = 0; i < emitterCount; i++) {
+            const angle = (i / emitterCount) * Math.PI * 2;
+            const x = Math.cos(angle) * 2.5;
+            const z = Math.sin(angle) * 2.5;
+
+            // 實體滴水嘴
+            const nozzle = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 12).rotateX(Math.PI), ringMat);
+            nozzle.position.set(x, -0.1, z);
+            dripRingGroup.add(nozzle);
+
+            // 動態水滴
+            const drop = new THREE.Mesh(dropGeo, dropMat);
+            drop.position.set(x, startY, z);
+            dripRingGroup.add(drop);
+
+            droplets.push({ mesh: drop, time: Math.random() * 2, startX: x, startZ: z, speed: 0.45 + Math.random() * 0.15 });
+        }
+        systemGroup.add(dripRingGroup);
+
+        // 連接水管
+        const pipePath = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(-8, 1, 0),
+            new THREE.Vector3(-8, 9.5, 0),
+            new THREE.Vector3(0, 10.8, -1),
+            new THREE.Vector3(4.2, 9.5, 0),
+            new THREE.Vector3(4.9, 8.4, 0)
+        ]);
+        const pipe = new THREE.Mesh(new THREE.TubeGeometry(pipePath, 64, 0.13, 16, false), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.65, roughness: 0.1 }));
+        pipe.castShadow = true;
+        systemGroup.add(pipe);
+
+        // ==========================================
+        // D. 智慧控制器與實體 3D 向量文字標籤
+        // ==========================================
+        const ctrlGroup = new THREE.Group();
+        ctrlGroup.position.set(0, 10, -3);
+        ctrlGroup.add(new THREE.Mesh(new THREE.BoxGeometry(3, 0.8, 2), new THREE.MeshStandardMaterial({ color: 0x263238 })));
+        systemGroup.add(ctrlGroup);
+
+        // 3D 向量標籤生成函數
+        function create3DLabel(text, position, color = 0x4fc3f7, scale = 1.0) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 512; canvas.height = 128;
+            ctx.font = 'Bold 42px Arial';
+            ctx.fillStyle = '#' + new THREE.Color(color).getHexString();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 256, 64);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+            sprite.position.copy(position);
+            sprite.scale.set(scale * 4, scale, 1);
+            return sprite;
         }
 
-        document.getElementById('buildBtn').addEventListener('click', () => {
-            isBuilt = true;
-            checkWaterLevel(); 
-            drawEverything();
-        });
+        // 依手稿加入標籤
+        systemGroup.add(create3DLabel("→ to water pump", new THREE.Vector3(-3.5, 11.2, 0), 0x4fc3f7, 1.2));
+        systemGroup.add(create3DLabel("water in →", new THREE.Vector3(3.0, 9.4, 0), 0x4fc3f7, 1.2));
+        systemGroup.add(create3DLabel("Water Reservoir", new THREE.Vector3(-8, 8.8, 0), 0xffffff, 0.9));
+        systemGroup.add(create3DLabel("Circular Drip Device", new THREE.Vector3(6, 9.5, 0), 0x26a69a, 1.1));
+        systemGroup.add(create3DLabel("Potted Plant", new THREE.Vector3(10, 5, 0), 0xffffff, 0.8));
 
-        function drawEverything() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Light background grid
-            ctx.strokeStyle = '#f4f4f6'; ctx.lineWidth = 1;
-            for (let x = 0; x < canvas.width; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
-            for (let y = 0; y < canvas.height; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
-            
-            if (!isBuilt) {
-                ctx.fillStyle = '#8e8e93'; ctx.font = '20px sans-serif'; ctx.textAlign = 'center';
-                ctx.fillText("Click the blue button to auto-generate the smart irrigation model.", canvas.width/2, canvas.height/2);
-                return;
-            }
+        // --- 4. 物理動力學與動畫循環 ---
+        const clock = new THREE.Clock();
+        const g = 9.8; // 重力加速度
+        const rippleGeo = new THREE.RingGeometry(0.01, 0.08, 32).rotateX(-Math.PI / 2);
+        const rippleMat = new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+        const ripples = [];
 
-            ctx.textAlign = 'left';
-            
-            // 1. Draw Water Reservoir (Clear Tank)
-            ctx.strokeStyle = '#333'; ctx.lineWidth = 3;
-            ctx.strokeRect(50, 150, 160, 220); 
-            
-            let waterVol = parseFloat(document.getElementById('waterVolume').value);
-            let waterHeight = (Math.max(0, waterVol) / 20) * 200; 
-            
-            ctx.fillStyle = isLowWater ? 'rgba(255, 59, 48, 0.2)' : 'rgba(122, 222, 255, 0.6)';
-            ctx.fillRect(52, 368 - waterHeight, 156, waterHeight);
-            
-            ctx.fillStyle = '#333'; ctx.font = 'bold 14px sans-serif';
-            ctx.fillText("Water Reservoir (Clear Tank)", 50, 130);
-
-            // Hardware Status LED on the Tank
-            ctx.beginPath();
-            ctx.arc(130, 175, 8, 0, Math.PI * 2);
-            ctx.fillStyle = isLowWater ? '#ff3b30' : '#34c759'; 
-            ctx.fill();
-            ctx.strokeStyle = '#333'; ctx.lineWidth = 1.5; ctx.stroke();
-            ctx.fillStyle = '#333'; ctx.font = '10px sans-serif';
-            ctx.fillText(isLowWater ? "RESERVOIR EMPTY" : "RESERVOIR FULL", 145, 178);
-
-            // 2. Draw Submersible Pump
-            ctx.fillStyle = '#4a4a4a';
-            ctx.fillRect(110, 310, 50, 55); 
-            ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif';
-            ctx.fillText("PUMP", 120, 340);
-
-            // 3. Draw Smart Controller Unit
-            ctx.fillStyle = '#f2f2f7'; ctx.strokeStyle = '#007aff'; ctx.lineWidth = 2;
-            ctx.fillRect(350, 50, 220, 85);
-            ctx.strokeRect(350, 50, 220, 85);
-            ctx.fillStyle = '#007aff'; ctx.font = 'bold 13px sans-serif';
-            ctx.fillText("Smart Controller Unit", 360, 75);
-            
-            // Pump Status LED on the Controller
-            ctx.beginPath();
-            ctx.arc(370, 105, 6, 0, Math.PI * 2);
-            ctx.fillStyle = isWatering ? '#34c759' : '#8e8e93'; 
-            ctx.fill(); ctx.stroke();
-            ctx.fillStyle = '#333'; ctx.font = '10px monospace';
-            ctx.fillText(isWatering ? "PUMP STATUS: ACTIVE" : "PUMP STATUS: STANDBY", 385, 108);
-
-            // 4. Draw Potting Soil & Roots
-            let potX = 420, potY = 320;
-            ctx.fillStyle = '#9c6644'; 
-            ctx.beginPath(); ctx.moveTo(potX, potY); ctx.lineTo(potX+160, potY); ctx.lineTo(potX+130, potY+120); ctx.lineTo(potX+30, potY+120); ctx.closePath(); ctx.fill(); ctx.stroke();
-            ctx.strokeStyle = '#6c584c'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(potX+80, potY); ctx.quadraticCurveTo(potX+60, potY+50, potX+50, potY+90);ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(potX+80, potY); ctx.quadraticCurveTo(potX+100, potY+60, potX+110, potY+100);ctx.stroke();
-            ctx.fillStyle = '#34c759'; ctx.beginPath(); ctx.arc(potX+80, potY-40, 25, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = '#333'; ctx.font = 'bold 13px sans-serif'; ctx.fillText("Potted Plant (Soil & Roots)", potX, potY+150);
-
-            // 5. Draw Soil Moisture Sensor Probe
-            ctx.fillStyle = '#2c3e50'; ctx.fillRect(potX+30, potY-20, 15, 50); 
-            ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5;
-            ctx.beginPath(); ctx.moveTo(potX+37, potY-20); ctx.quadraticCurveTo(potX+20, 100, 350, 100); ctx.stroke();
-            ctx.fillStyle = '#333'; ctx.font = '10px sans-serif'; ctx.fillText("Sensor Probe", potX-45, potY-25);
-
-            // 6. Draw Micro-Tube & Drip Emitter
-            ctx.strokeStyle = isWatering ? '#007aff' : '#555'; 
-            ctx.lineWidth = isWatering ? 5 : 3.5;
-            ctx.beginPath(); ctx.moveTo(135, 310); ctx.lineTo(135, 100); ctx.lineTo(320, 100); ctx.lineTo(320, 280); ctx.lineTo(potX+70, 280); ctx.stroke();
-
-            ctx.fillStyle = '#ff9500'; ctx.fillRect(potX+65, 275, 12, 15);
-            ctx.fillStyle = '#333'; ctx.font = '10px sans-serif'; ctx.fillText("Drip Emitter (1 GPH)", potX+85, 275);
-
-            // Water Drips Animation
-            if (isWatering) {
-                ctx.fillStyle = '#007aff';
-                ctx.beginPath(); ctx.arc(potX+71, 298, 4, 0, Math.PI*2); ctx.fill();
-                ctx.beginPath(); ctx.arc(potX+71, 310, 4, 0, Math.PI*2); ctx.fill();
-            }
+        function createRippleEffect(x, z) {
+            const rip = new THREE.Mesh(rippleGeo, rippleMat.clone());
+            rip.position.set(6 + x, 5.82, z); // 精確貼在土表
+            scene.add(rip);
+            ripples.push({ mesh: rip, scale: 1, maxScale: 4 + Math.random()*2, opacity: 0.8 });
         }
 
-        // Smart Automation Logic Test
-        document.getElementById('simBtn').addEventListener('click', () => {
-            if (!isBuilt) { alert("Please generate the hardware model first!"); return; }
-            
-            let water = parseFloat(document.getElementById('waterVolume').value);
-            let soil = parseFloat(document.getElementById('soilMoisture').value);
-            let thresh = parseFloat(document.getElementById('threshold').value);
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            controls.update();
 
-            // Safety check for empty tank
-            if (isLowWater) {
-                alert("🚨 System Alert: Safety Intercept!\nWater reservoir level is too low (" + water + "L).\nSubmersible pump dry-run protection activated. System halted.");
-                return;
+            // 1. 水滴重力自由落體運動
+            droplets.forEach(d => {
+                d.time += delta * d.speed;
+                let currentY = startY - (0.5 * g * d.time * d.time);
+                
+                // 觸碰到土壤
+                if (currentY <= endY) {
+                    createRippleEffect(d.startX, d.startZ); // 觸發漣漪
+                    d.time = 0; // 重置
+                    currentY = startY;
+                }
+                d.mesh.position.y = currentY;
+
+                // 微觀凝聚變形細節
+                if (d.time < 0.12) {
+                    const progress = d.time / 0.12;
+                    d.mesh.scale.set(progress, progress, progress);
+                } else {
+                    d.mesh.scale.set(1, 1.8, 1);
+                }
+            });
+
+            // 2. 漣漪擴散漸隱動畫
+            for (let i = ripples.length - 1; i >= 0; i--) {
+                const r = ripples[i];
+                r.scale += delta * 11;
+                r.mesh.scale.set(r.scale, r.scale, 1);
+                r.opacity -= delta * 1.6;
+                r.mesh.material.opacity = r.opacity;
+
+                if (r.opacity <= 0 || r.scale >= r.maxScale) {
+                    scene.remove(r.mesh);
+                    r.mesh.geometry.dispose();
+                    r.mesh.material.dispose();
+                    ripples.splice(i, 1);
+                }
             }
 
-            if (soil < thresh) {
-                isWatering = true;
-                document.getElementById('pumpLight').className = "light green";
-                document.getElementById('pumpStatus').innerText = "Submersible Pump: Active (Watering...)";
-                drawEverything(); 
+            renderer.render(scene, camera);
+        }
 
-                setTimeout(() => {
-                    isWatering = false;
-                    document.getElementById('soilMoisture').value = Math.min(100, soil + 25);
-                    let newWater = Math.max(0, water - 2.5);
-                    document.getElementById('waterVolume').value = newWater;
-                    
-                    document.getElementById('pumpLight').className = "light";
-                    document.getElementById('pumpStatus').innerText = "Submersible Pump: Standby";
-                    
-                    checkWaterLevel(); 
-                    drawEverything();
-                    
-                    alert("🤖 Automation Report:\nSoil moisture was detected below threshold. Controller triggered the submersible pump.\nIrrigation completed. 2.5L water consumed.");
-                }, 1500);
-            } else {
-                alert("🤖 System Check:\nSoil moisture is sufficient (" + soil + "%), which is above the threshold. Pump remains in power-saving standby.");
-            }
-        });
+        animate();
 
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+        // 視窗尺寸監聽
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }, false);
     </script>
 </body>
 </html>
